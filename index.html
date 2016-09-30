@@ -1,0 +1,41 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title></title>
+</head>
+<body>
+
+<input type="file" id="file" />
+
+<script type="text/javascript" src="lib/abstract-fence.new.js"></script>
+<script type="text/javascript" src="lib/jszip.min.js"></script>
+<script type="text/javascript" src="lib/tXml.js"></script>
+<script type="text/javascript" src="lib/colz.class.min.js"></script>
+
+<script type="text/javascript" src="src/main.js"></script>
+
+<script type="text/javascript">
+Model.task('bindEvent', function(scope, next){
+    document.getElementById('file').onchange = e => {
+      let file = e.target.files[0];
+
+      next({
+        file
+      });
+    };
+});
+
+Model.task('processFile', scope => {
+    let {file} = scope;
+
+    PPTParsor.parse(file);
+});
+
+Model.task('init', ['bindEvent'].then(['processFile']));
+
+Model.runWorkflow('init');
+
+</script>
+</body>
+</html>
