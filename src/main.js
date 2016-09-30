@@ -736,7 +736,7 @@
 
 
 
-    service('genShape', (getTextByPathList, getFill, getPosition, getSize, getBorder, genTextBody, {parseInt}) => (node, slideLayoutSpNode, slideMasterSpNode, id, name, idx, type, order, slideMasterTextStyles) => {
+    service('genShape', (getTextByPathList, getFill, getPosition, getSize, getBorder, genTextBody, getVerticalAlign, {parseInt}) => (node, slideLayoutSpNode, slideMasterSpNode, id, name, idx, type, order, slideMasterTextStyles) => {
         
         var xfrmList = ["p:spPr", "a:xfrm"];
         var slideXfrmNode = getTextByPathList(node, xfrmList);
@@ -1141,7 +1141,9 @@
                     'z-index': order
                 };
 
-                textInfo.style = Object.assign(textInfo.style, pos, size, border, fill, zIndex);
+                var verticalAlign = getVerticalAlign(node, slideLayoutSpNode, slideMasterSpNode, type);
+
+                textInfo.style = Object.assign(textInfo.style, pos, size, border, fill, zIndex, verticalAlign);
 
             if (node["p:txBody"] !== undefined) {
                 textInfo.html = genTextBody(node["p:txBody"], slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles);
@@ -1328,7 +1330,12 @@
             }
         }
         
-        return anchor === "ctr" ? "v-mid" : anchor === "b" ?  "v-down" : "v-up";
+        //return anchor === "ctr" ? "v-mid" : anchor === "b" ?  "v-down" : "v-up";
+        var justifyContent = anchor === "ctr" ? "center" : anchor === "b" ?  "flex-end" : "flex-start";
+
+        return {
+            'justify-content': justifyContent
+        };
     });
 
 
@@ -1760,8 +1767,19 @@
         let getHtml = (item) => {
             let _get = () => item.lists.map(i => getHtml(i)).join('');
 
+            var getStyle = style => {
+                var s = [];
+                for(var i in style){
+                    if(style.hasOwnProperty(i)){
+                        s.push(i + ':' + style[i]);
+                    }
+                }
+
+                return s.join(';');
+            };
+
             var html = `
-                <div class="item ${item.type}" style="width:${item.style.width}px;height:${item.style.height}px;left:${item.style.left}px;top:${item.style.top}px;z-index:${item.style['z-index']};position:absolute;">
+                <div class="item ${item.type}" style="${getStyle(item.style)};position:absolute;">
                 ${item.type === 'com' ? _get() : (item.rectHtml || item.html)}
                 </div>
             `;
