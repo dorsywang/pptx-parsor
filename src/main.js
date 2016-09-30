@@ -222,7 +222,9 @@
                 "'>TODO: diagram</div>";
     });
 
-    service('genGlobalCSS', () => () => {
+    service('genGlobalCSS', (scope) => () => {
+        let {styleTable} = scope;
+
         var cssText = "";
         for (var key in styleTable) {
             cssText += "section ." + styleTable[key]["name"] + "{" + styleTable[key]["text"] + "}\n";
@@ -567,13 +569,13 @@
             if (isSvgMode) {
                 return fillColor;
             } else {
-                return "background-color: " + fillColor + ";";
+                return {"background-color": fillColor};
             }
         } else {		
             if (isSvgMode) {
                 return "none";
             } else {
-                return "background-color: " + fillColor + ";";
+                return {"background-color": fillColor};
             }
             
         }
@@ -612,6 +614,11 @@
         //debug(JSON.stringify(node));
         
         var cssText = "border: ";
+        var styleObj = {
+            'border-width': "",
+            'border-color': '',
+            'border-style': ''
+        };
         
         // 1. presentationML
         var lineNode = node["p:spPr"]["a:ln"];
@@ -619,9 +626,12 @@
         // Border width: 1pt = 12700, default = 0.75pt
         var borderWidth = parseInt(getTextByPathList(lineNode, ["attrs", "w"])) / 12700;
         if (isNaN(borderWidth) || borderWidth < 1) {
-            cssText += "1pt ";
+            // cssText += "1pt ";
+
+            styleObj['border-width'] = '1pt';
         } else {
-            cssText += borderWidth + "pt ";
+            // cssText += borderWidth + "pt ";
+            styleObj['border-width'] = borderWidth + 'pt';
         }
         
         // Border color
@@ -660,50 +670,52 @@
             borderColor = "#" + borderColor;
             
         }
-        cssText += " " + borderColor + " ";
+
+        styleObj['border-color'] = borderColor;
         
         // Border type
         var borderType = getTextByPathList(lineNode, ["a:prstDash", "attrs", "val"]);
         var strokeDasharray = "0";
+        var borderStyle;
         switch (borderType) {
             case "solid":
-                cssText += "solid";
+                borderStyle = "solid";
                 strokeDasharray = "0";
                 break;
             case "dash":
-                cssText += "dashed";
+                borderStyle = "dashed";
                 strokeDasharray = "5";
                 break;
             case "dashDot":
-                cssText += "dashed";
+                borderStyle = "dashed";
                 strokeDasharray = "5, 5, 1, 5";
                 break;
             case "dot":
-                cssText += "dotted";
+                borderStyle = "dotted";
                 strokeDasharray = "1, 5";
                 break;
             case "lgDash":
-                cssText += "dashed";
+                borderStyle = "dashed";
                 strokeDasharray = "10, 5";
                 break;
             case "lgDashDotDot":
-                cssText += "dashed";
+                borderStyle = "dashed";
                 strokeDasharray = "10, 5, 1, 5, 1, 5";
                 break;
             case "sysDash":
-                cssText += "dashed";
+                borderStyle = "dashed";
                 strokeDasharray = "5, 2";
                 break;
             case "sysDashDot":
-                cssText += "dashed";
+                borderStyle = "dashed";
                 strokeDasharray = "5, 2, 1, 5";
                 break;
             case "sysDashDotDot":
-                cssText += "dashed";
+                borderStyle = "dashed";
                 strokeDasharray = "5, 2, 1, 5, 1, 5";
                 break;
             case "sysDot":
-                cssText += "dotted";
+                borderStyle = "dotted";
                 strokeDasharray = "2, 5";
                 break;
             case undefined:
@@ -712,11 +724,13 @@
                 //console.warn(borderType);
                 //cssText += "#000 solid";
         }
+
+        styleObj['border-style'] = borderStyle;
         
         if (isSvgMode) {
             return {"color": borderColor, "width": borderWidth, "type": borderType, "strokeDasharray": strokeDasharray};
         } else {
-            return cssText + ";";
+            return styleObj;
         }
     });
 
@@ -737,6 +751,9 @@
             isFlipV = true;
         }
 
+        var returnInfo;
+
+
         var shapeInfo = {
             type: 'rect',
             style: {
@@ -744,7 +761,24 @@
             rectHtml: ''
         };
 
+         var textInfo = {
+            type: 'text',
+            style: {
+            },
+            html: ''
+        };
+
+        // shape包含text，都转为com
+        var comInfo = {
+            type: 'com',
+            style: {
+            },
+            rectHtml: '',
+            lists: [shapeInfo, textInfo]
+        };
+
         var rectHtml = "";
+        // 如果没有shapeType，则一个TextBox
         if (shapType !== undefined) {
             
             var off = getTextByPathList(slideXfrmNode, ["a:off", "attrs"]);
@@ -1029,6 +1063,7 @@
             }
             
             rectHtml += "</svg>";
+            shapeInfo.rectHtml = rectHtml;
 
 
             /*
@@ -1043,14 +1078,78 @@
             
             // TextBody
             if (node["p:txBody"] !== undefined) {
-                rectHtml += genTextBody(node["p:txBody"], slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles);
+                var html = genTextBody(node["p:txBody"], slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles);
+
+                var pos = getPosition(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
+                var size = getSize(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
+
+                textInfo.style = Object.assign(textInfo.style, pos, size);
+                textInfo.style['z-index'] = order;
+
+                textInfo.html = html;
+
+                // 计算comObject
+                var l = 99999, r = -9999999, t = 999999, b = -99999999;
+
+                var currObject = [shapeInfo, textInfo];
+
+                currObject.map(function(item){
+                    if(item.style.left < l){
+                        l = item.style.left;
+                    }
+
+                    if(r < item.style.width + item.style.left){
+                        r = item.style.width + item.style.left;
+                    }
+
+                    var height = item.style.height;
+
+                    if(b < height + item.style.top){
+                        b = height + item.style.top;
+                    }
+                    
+
+                    if(item.style.top < t){
+                        t = item.style.top;
+                    }
+
+                });
+
+                comInfo.style.left = l;
+                comInfo.style.top = t;
+                comInfo.style.width = r - l;
+                comInfo.style.height = b - t;
+
+                // 组合和取消组合的时候，各自的动画也要消失
+                currObject.map(function(item){
+                    item.style.left -= l;
+                    item.style.top -= t;
+                });
+
+                return comInfo;
+            }else{
+                return shapeInfo;
             }
-
-            shapeInfo.rectHtml = rectHtml;
-
-            return shapeInfo;
             
         } else {
+            
+                var pos = getPosition(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
+                var size = getSize(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
+                var border = getBorder(node, false);
+                var fill = getFill(node, false);
+                var zIndex = {
+                    'z-index': order
+                };
+
+                textInfo.style = Object.assign(textInfo.style, pos, size, border, fill, zIndex);
+
+            if (node["p:txBody"] !== undefined) {
+                textInfo.html = genTextBody(node["p:txBody"], slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles);
+            }
+
+            return textInfo;
+
+
             
             /*
             result += "<div class='block content " + getVerticalAlign(node, slideLayoutSpNode, slideMasterSpNode, type) +
@@ -1064,15 +1163,12 @@
                     "'>";
             
             // TextBody
-            if (node["p:txBody"] !== undefined) {
-                result += genTextBody(node["p:txBody"], slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles);
             }
             result += "</div>";
             */
             
         }
         
-        return result;
     });
 
 
@@ -1178,7 +1274,8 @@
     });
 
 
-    service('genSpanElement', (getTextByPathList, getFontColor, getFontSize, getFontType, getFontBold, getFontItalic, getFontDecoration, getTextVerticalAlign) => (node, slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles) => {
+    service('genSpanElement', (getTextByPathList, getFontColor, getFontSize, getFontType, getFontBold, getFontItalic, getFontDecoration, getTextVerticalAlign, scope) => (node, slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles) => {
+        let {styleTable} = scope;
         
         var text = node["a:t"];
         if (typeof text !== 'string') {
@@ -1201,6 +1298,7 @@
         
         var cssName = "";
         
+        // 这里保留styleTable的逻辑，但复写到span上
         if (styleText in styleTable) {
             cssName = styleTable[styleText]["name"];
         } else {
@@ -1210,8 +1308,8 @@
                 "text": styleText
             };
         }
-        
-        return "<span class='text-block " + cssName + "'>" + text.replace(/\s/i, "&nbsp;") + "</span>";
+
+        return `<span class='text-block ${cssName}' style="${styleText}">${text.replace(/\s/i, "&nbsp;")}</span>`;
     });
 
     service('getTextVerticalAlign', (getTextByPathList) => (node, type, slideMasterTextStyles) => {
@@ -1655,17 +1753,65 @@
         };
     });
 
+
+    task('renderTest', (scope) => {
+        let {sliders} = scope;
+
+        let getHtml = (item) => {
+            let _get = () => item.lists.map(i => getHtml(i)).join('');
+
+            var html = `
+                <div class="item ${item.type}" style="width:${item.style.width}px;height:${item.style.height}px;left:${item.style.left}px;top:${item.style.top}px;z-index:${item.style['z-index']};position:absolute;">
+                ${item.type === 'com' ? _get() : (item.rectHtml || item.html)}
+                </div>
+            `;
+
+            return html;
+
+        };
+
+        let genChildren = item => {
+            let children = item.children;
+
+            let str = children.map(i => {
+                if(i === ""){
+                    return "";
+                }
+
+                return getHtml(i);
+
+
+            });
+
+            return str.join('');
+        };
+
+        let str = sliders.map(item => {
+            
+            var html = `<div class='page' style="position: relative;width: ${item.style.width}px;height:${item.style.height}px;background-color: $(item.style.background);">
+                ${genChildren(item)}
+                </div>
+            `;
+
+            return html;
+        });
+
+        document.getElementById('work').innerHTML = str.join('');
+    });
     
 
 
-    task('parse', ['unzipFile'].then(['loadTheme', 'processSingleSlide']), function(scope){
+    task('parse', ['unzipFile'].then(['loadTheme', 'processSingleSlide']).then(['renderTest']), function(scope){
         console.log(scope.sliders, 'slides');
+
+        console.log(scope.styleTable, 'styleTable');
     });
 
     let PPTParsor = {
         parse(file){
             Model.runWorkflow('parse', {
-                file
+                file,
+                styleTable: {}
             });
         }
     };
