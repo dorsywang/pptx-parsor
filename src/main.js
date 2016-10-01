@@ -3,6 +3,21 @@
 
     let task = Model.task.bind(Model);
     let service = Model.service.bind(Model);
+    var getStyle = style => {
+            var s = [];
+            for(var i in style){
+                if(style.hasOwnProperty(i)){
+                    if(/width|height|top|left/.test(i)){
+                        s.push(i + ':' + style[i] + "px");
+                    }else{
+                        s.push(i + ':' + style[i]);
+                    }
+                }
+            }
+
+            return s.join(';');
+        };
+
 
     /*
     task('configLoadFile', scope => {
@@ -1083,7 +1098,9 @@
                 var pos = getPosition(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
                 var size = getSize(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
 
-                textInfo.style = Object.assign(textInfo.style, pos, size);
+                var verticalAlign = getVerticalAlign(node, slideLayoutSpNode, slideMasterSpNode);
+
+                textInfo.style = Object.assign(textInfo.style, pos, size, verticalAlign);
                 textInfo.style['z-index'] = order;
 
                 textInfo.html = html;
@@ -1120,6 +1137,10 @@
                 comInfo.style.width = r - l;
                 comInfo.style.height = b - t;
 
+                // 使用flex布局
+                textInfo.style.display = "flex";
+                textInfo.style['flex-direction'] = "column";
+
                 // 组合和取消组合的时候，各自的动画也要消失
                 currObject.map(function(item){
                     item.style.left -= l;
@@ -1138,7 +1159,9 @@
                 var border = getBorder(node, false);
                 var fill = getFill(node, false);
                 var zIndex = {
-                    'z-index': order
+                    'z-index': order,
+                    display: 'flex',
+                    'flex-direction': "column"
                 };
 
                 var verticalAlign = getVerticalAlign(node, slideLayoutSpNode, slideMasterSpNode, type);
@@ -1197,12 +1220,30 @@
         // TODO:
         if (algn === undefined) {
             if (type == "title" || type == "subTitle" || type == "ctrTitle") {
-                return "h-mid";
+                //return "h-mid";
+                return {
+                    'align-items': 'center',
+                    'text-align': 'center'
+                };
             } else if (type == "sldNum") {
-                return "h-right";
+                // return "h-right";
+                return {
+                    'align-items': 'flex-end',
+                    'text-align': 'right'
+                };
             }
         }
-        return algn === "ctr" ? "h-mid" : algn === "r" ? "h-right" : "h-left";
+        // return algn === "ctr" ? "h-mid" : algn === "r" ? "h-right" : "h-left";
+        return algn === "ctr" ? {
+            'align-items': 'center',
+            'text-align': 'center'
+        } : algn === "r" ? {
+            'align-items': 'flex-end',
+            'text-align': 'right'
+        } : {
+            'align-items': 'flex-start',
+            'text-align': 'left'
+        };
     });
 
 
@@ -1352,7 +1393,7 @@
             for (var i=0; i<textBodyNode["a:p"].length; i++) {
                 var pNode = textBodyNode["a:p"][i];
                 var rNode = pNode["a:r"];
-                text += "<div class='" + getHorizontalAlign(pNode, slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles) + "'>";
+                text += `<div class='' style="${getStyle(getHorizontalAlign(pNode, slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles))}">`;
                 text += genBuChar(pNode);
                 if (rNode === undefined) {
                     // without r
@@ -1372,7 +1413,7 @@
             // one p
             var pNode = textBodyNode["a:p"];
             var rNode = pNode["a:r"];
-            text += "<div class='" + getHorizontalAlign(pNode, slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles) + "'>";
+            text += "<div class='' style='" + getStyle(getHorizontalAlign(pNode, slideLayoutSpNode, slideMasterSpNode, type, slideMasterTextStyles)) + "'>";
             text += genBuChar(pNode);
             if (rNode === undefined) {
                 // without r
@@ -1767,17 +1808,7 @@
         let getHtml = (item) => {
             let _get = () => item.lists.map(i => getHtml(i)).join('');
 
-            var getStyle = style => {
-                var s = [];
-                for(var i in style){
-                    if(style.hasOwnProperty(i)){
-                        s.push(i + ':' + style[i]);
-                    }
-                }
-
-                return s.join(';');
-            };
-
+            
             var html = `
                 <div class="item ${item.type}" style="${getStyle(item.style)};position:absolute;">
                 ${item.type === 'com' ? _get() : (item.rectHtml || item.html)}
