@@ -1,6 +1,5 @@
 {
 
-
     let task = Model.task.bind(Model);
     let service = Model.service.bind(Model);
     var getStyle = style => {
