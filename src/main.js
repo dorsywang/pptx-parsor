@@ -1485,7 +1485,7 @@
         return genShape(node, slideLayoutSpNode, slideMasterSpNode, id, name, idx, type, order, warpObj["slideMasterTextStyles"]);
     });
 
-    service('processNodesInSlide', (processSpNode/*, processCxnSpNode, processPicNode, processGraphicFrameNode, processGroupSpNode*/) => (nodeKey, nodeValue, warpObj) => {
+    service('processNodesInSlide', (processSpNode, processCxnSpNode, processPicNode, processGroupSpNode/*, processGraphicFrameNode, processGroupSpNode*/) => (nodeKey, nodeValue, warpObj) => {
 	
         var result = "";
         
@@ -1493,20 +1493,20 @@
             case "p:sp":	// Shape, Text
                 result = processSpNode(nodeValue, warpObj);
                 break;
-                /*
             case "p:cxnSp":	// Shape, Text (with connection)
                 result = processCxnSpNode(nodeValue, warpObj);
                 break;
             case "p:pic":	// Picture
                 result = processPicNode(nodeValue, warpObj);
                 break;
+                /*
             case "p:graphicFrame":	// Chart, Diagram, Table
                 result = processGraphicFrameNode(nodeValue, warpObj);
                 break;
+                */
             case "p:grpSp":	// 群組
                 result = processGroupSpNode(nodeValue, warpObj);
                 break;
-                */
             default:
         }
         
@@ -1547,7 +1547,10 @@
         return result;
     });
     
-    service('processGroupSpNode', (processNodesInSlide) => (node, warpObj) => {
+    var c = 0;
+    service('processGroupSpNode', () => (node, warpObj) => {
+    // 这里防止循环引用
+        let processNodesInSlide = Model.serviceMap['processNodesInSlide'].serviceResult;
         
         var factor = 96 / 914400;
         
@@ -1564,24 +1567,41 @@
         var order = node["attrs"]["order"];
         
         var result = "<div class='block group' style='z-index: " + order + "; top: " + (y - chy) + "px; left: " + (x - chx) + "px; width: " + (cx - chcx) + "px; height: " + (cy - chcy) + "px;'>";
+        var comInfo = {
+            type: 'com',
+            lists: [],
+            style: {
+                'z-index': order,
+                left: x - chx,
+                top: y - chy,
+                width: cx - chcx,
+                height: cy - chcy
+            }
+        };
+
+        c ++;
+
+        if(c > 1000){
+            console.log('maxi');
+            return {};
+        }
+    
         
         // Procsee all child nodes
         for (var nodeKey in node) {
             if (node[nodeKey].constructor === Array) {
                 for (var i=0; i<node[nodeKey].length; i++) {
-                    result += processNodesInSlide(nodeKey, node[nodeKey][i], warpObj);
+                    comInfo.lists.push(processNodesInSlide(nodeKey, node[nodeKey][i], warpObj));
                 }
             } else {
-                result += processNodesInSlide(nodeKey, node[nodeKey], warpObj);
+                 comInfo.lists.push(processNodesInSlide(nodeKey, node[nodeKey], warpObj));
             }
         }
         
-        result += "</div>";
-        
-        return result;
+        return comInfo;
     });
 
-    service('processPicNode', () => (node, warpObj) => {
+    service('processPicNode', (getPosition, getSize,{extractFileExtension, zip, base64ArrayBuffer}) => (node, warpObj) => {
         
         //debug( JSON.stringify( node ) );
         
@@ -1614,9 +1634,37 @@
             default:
                 mimeType = "image/*";
         }
+
+        var picInfo = {
+            type: 'pic',
+            style: {
+            },
+
+            url: ''
+        };
+
+        var pos = getPosition(xfrmNode, undefined, undefined);
+        var size = getSize(xfrmNode, undefined, undefined);
+
+        var zIndex = {
+            'z-index': order,
+            display: 'flex',
+            'flex-direction': "column"
+        };
+
+        picInfo.style = Object.assign(picInfo.style, pos, size, zIndex);
+
+        var url = "data:" + mimeType + ";base64," + base64ArrayBuffer(imgArrayBuffer);
+
+        picInfo.url = url;
+
+        return picInfo;
+
+        /*
         return "<div class='block content' style='" + getPosition(xfrmNode, undefined, undefined) + getSize(xfrmNode, undefined, undefined) +
                 " z-index: " + order + ";" +
                 "'><img src=\"data:" + mimeType + ";base64," + base64ArrayBuffer(imgArrayBuffer) + "\" style='width: 100%; height: 100%'/></div>";
+                */
     });
 
 
@@ -1807,10 +1855,14 @@
         let getHtml = (item) => {
             let _get = () => item.lists.map(i => getHtml(i)).join('');
 
+            let getPic = () => {
+                return `<img src='${item.url}' width='100%' height='100%' />`;
+            };
+
             
             var html = `
                 <div class="item ${item.type}" style="${getStyle(item.style)};position:absolute;">
-                ${item.type === 'com' ? _get() : (item.rectHtml || item.html)}
+                ${item.type === 'com' ? _get() : (item.rectHtml || item.html || getPic())}
                 </div>
             `;
 
@@ -1836,7 +1888,7 @@
 
         let str = sliders.map(item => {
             
-            var html = `<div class='page' style="position: relative;width: ${item.style.width}px;height:${item.style.height}px;background-color: $(item.style.background);">
+            var html = `<div class='page' style="position: relative;width: ${item.style.width}px;height:${item.style.height}px;background-color: #${item.style.background};">
                 ${genChildren(item)}
                 </div>
             `;
