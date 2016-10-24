@@ -16,6 +16,25 @@
 
             return s.join(';');
         };
+     
+
+     class Ct{
+        constructor(arr){
+            this.__ = arr;
+        }
+
+        map(func){
+            if(this.__.constructor === Array){
+                return new Ct(this.__.map(func));
+            }else{
+                return new Ct(func(this.__));
+            }
+        }
+
+        static of(arr){
+            return new Ct(arr);
+        }
+     }
 
 
     /*
@@ -95,6 +114,19 @@
             result += doFunction(node, 0);
         }
         return result;
+    });
+
+    // gen Point
+    service('genPt', (getTextByPathList, getPxFromEMUs) => node => {
+        let ptNode = getTextByPathList(node, ['a:pt']);
+
+        let x = getPxFromEMUs(ptNode.attrs.x);
+        let y = getPxFromEMUs(ptNode.attrs.y);
+
+        return {
+            x,
+            y
+        };
     });
 
     service('genBuChar', (getTextByPathList) => (node) => {
@@ -518,6 +550,10 @@
         
     });
 
+    service('getPxFromEMUs', ({parseInt}) => x => {
+        return parseInt(x) * 96 / 914400;
+    });
+
     service('getSchemeColorFromTheme', (getTextByPathList, scope) => (schemeClr) => {
         let {themeContent} = scope;
 
@@ -748,9 +784,89 @@
         }
     });
 
+    service('genCustomGeometry', (genPt, getTextByPathList) => customGeometryNode => {
+        // 如果是普通的多边形
+        var gdListNode = Ct.of(customGeometryNode['a:gdLst']);
+
+        var gdList = {};
+
+        gdListNode.map(item => {
+            let name = item.attrs.name;
+            let formula = item.attrs.fmla;
+            
+            gdList[name] = formula;
+        });
+
+        let rectNode = Ct.of(customGeometryNode['a:rect']);
+
+        rectNode.map(item => {
+            
+        });
+
+        let pathNode = customGeometryNode['a:pathLst']['a:path'];
+
+        let w = pathNode.attrs.w;
+        let h = pathNode.attrs.h;
+
+        console.log(pathNode, 'pathNode');
+
+        let sortedPathNodeChildren = [];
+
+        // 对pathNode进行排序
+        for(var i in pathNode){
+            if(pathNode.hasOwnProperty(i)){
+                Ct.of(pathNode[i]).map(item => {
+                    if(i !== 'attrs'){
+                        item.name = i;
+                        sortedPathNodeChildren.push(item);
+                    }
+                });
+            }
+        }
+
+        sortedPathNodeChildren.sort((a, b) => Number(a.order) < Number(b.order));
+
+        let pathStrArr = [];
+
+        // 这里少了其他路径
+        let operMap = {
+            'a:lnTo': 'L',
+            'a:moveTo': 'M'
+        };
+
+        pathStrArr = sortedPathNodeChildren.map(item => {
+
+            let oper = operMap[item.name];
+
+            if(oper){
+                let point = genPt(item);
+                return `${oper}${point.x} ${point.y}`;
+            }
+        });
+
+        let pathStr = `
+            <path d="${pathStrArr.join('')} Z" />
+        `;
+
+        console.log(pathStr);
+
+        return pathStr;
+
+    });
+
+    service('getRotation', (getTextByPathList, getPxFromEMUs) => node => {
+        let rotation = node.attrs.rot;
+
+        if(rotation){
+            return (rotation / 60000) + 'deg'
+        }else{
+            return 0;
+        }
+    });
 
 
-    service('genShape', (getTextByPathList, getFill, getPosition, getSize, getBorder, genTextBody, getVerticalAlign, {parseInt}) => (node, slideLayoutSpNode, slideMasterSpNode, id, name, idx, type, order, slideMasterTextStyles) => {
+
+    service('genShape', (getTextByPathList, getFill, getPosition, getSize, getBorder, genTextBody, getVerticalAlign, genCustomGeometry, getRotation, {parseInt}) => (node, slideLayoutSpNode, slideMasterSpNode, id, name, idx, type, order, slideMasterTextStyles) => {
         
         var xfrmList = ["p:spPr", "a:xfrm"];
         var slideXfrmNode = getTextByPathList(node, xfrmList);
@@ -759,10 +875,18 @@
         
         var result = "";
         var shapType = getTextByPathList(node, ["p:spPr", "a:prstGeom", "attrs", "prst"]);
+
+        var customGeometryNode = getTextByPathList(node, ["p:spPr", "a:custGeom"]);
         
         var isFlipV = false;
         if ( getTextByPathList(slideXfrmNode, ["attrs", "flipV"]) === "1" || getTextByPathList(slideXfrmNode, ["attrs", "flipH"]) === "1") {
             isFlipV = true;
+        }
+
+        if(! shapType){
+            if(customGeometryNode){
+                shapType = 'customGeometry';
+            }
         }
 
         var returnInfo;
@@ -805,10 +929,16 @@
 
 
             
-            rectHtml += "<svg class='drawing' _id='" + id + "' _idx='" + idx + "' _type='" + type + "' _name='" + name + "'>";
+            // rectHtml += "<svg viewbox='0,0,1,1' class='drawing' _id='" + id + "' _idx='" + idx + "' _type='" + type + "' _name='" + name + "'>";
+            rectHtml += "<svg  class='drawing' _id='" + id + "' _idx='" + idx + "' _type='" + type + "' _name='" + name + "'>";
             
             var rectSize = getSize(slideXfrmNode, undefined, undefined);
             var rectPosition = getPosition(slideXfrmNode, undefined, undefined);
+
+            var rotation = getRotation(slideXfrmNode);
+
+            shapeInfo.style.transform = `rotate(${rotation})`;
+
 
 
             shapeInfo.style = Object.assign(shapeInfo.style, rectSize, rectPosition);
@@ -816,9 +946,14 @@
             
             // Fill Color
             var fillColor = getFill(node, true);
+            shapeInfo.style.fill = fillColor;
+
             
             // Border Color		
             var border = getBorder(node, true);
+
+            shapeInfo.style.stroke = border.color;
+            shapeInfo.style['stoke-width'] = border.width;
             
             var headEndNodeAttrs = getTextByPathList(node, ["p:spPr", "a:ln", "a:headEnd", "attrs"]);
             var tailEndNodeAttrs = getTextByPathList(node, ["p:spPr", "a:ln", "a:tailEnd", "attrs"]);
@@ -1071,6 +1206,9 @@
                     break;
                 case "triangle":
                     break;
+
+                case "customGeometry":
+                    rectHtml += genCustomGeometry(customGeometryNode);
                 case undefined:
                 default:
                     console.warn("Undefine shape type.");
@@ -1150,9 +1288,8 @@
             }else{
                 return shapeInfo;
             }
-            
-        } else {
-            
+
+        }else{
                 var pos = getPosition(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
                 var size = getSize(slideXfrmNode, slideLayoutXfrmNode, slideMasterXfrmNode);
                 var border = getBorder(node, false);
@@ -1458,16 +1595,16 @@
         
         if (type !== undefined) {
             if (idx !== undefined) {
-                slideLayoutSpNode = warpObj["slideLayoutTables"]["typeTable"][type];
-                slideMasterSpNode = warpObj["slideMasterTables"]["typeTable"][type];
+                warpObj["slideLayoutTables"] && (slideLayoutSpNode = warpObj["slideLayoutTables"]["typeTable"][type]);
+                warpObj["slideMasterTables"] && (slideMasterSpNode = warpObj["slideMasterTables"]["typeTable"][type]);
             } else {
-                slideLayoutSpNode = warpObj["slideLayoutTables"]["typeTable"][type];
-                slideMasterSpNode = warpObj["slideMasterTables"]["typeTable"][type];
+                warpObj["slideLayoutTables"] && (slideLayoutSpNode = warpObj["slideLayoutTables"]["typeTable"][type]);
+                warpObj["slideMasterTables"] && (slideMasterSpNode = warpObj["slideMasterTables"]["typeTable"][type]);
             }
         } else {
             if (idx !== undefined) {
-                slideLayoutSpNode = warpObj["slideLayoutTables"]["idxTable"][idx];
-                slideMasterSpNode = warpObj["slideMasterTables"]["idxTable"][idx];
+                warpObj["slideLayoutTables"] && (slideLayoutSpNode = warpObj["slideLayoutTables"]["idxTable"][idx]);
+                warpObj["slideMasterTables"] && (slideMasterSpNode = warpObj["slideMasterTables"]["idxTable"][idx]);
             } else {
                 // Nothing
             }
@@ -1668,7 +1805,81 @@
     });
 
 
-    service('processSingle', (readXmlFile, getTextByPathList, indexNodes, processNodesInSlide) => (zip, sldFileName, index, slideSize) => {
+    service('getResObj', (readXmlFile) => (resName, zip) => {
+       // =====< Step 1 >=====
+        // Read relationship filename of the slide (Get slideLayoutXX.xml)
+        // @sldFileName: ppt/slides/slide1.xml
+        // @resName: ppt/slides/_rels/slide1.xml.rels
+        var resContent = readXmlFile(zip, resName);
+        var RelationshipArray = resContent["Relationships"]["Relationship"];
+        var layoutFilename = "";
+        var slideResObj = {};
+        if (RelationshipArray.constructor === Array) {
+            for (var i=0; i<RelationshipArray.length; i++) {
+                switch (RelationshipArray[i]["attrs"]["Type"]) {
+                    case "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout":
+                        layoutFilename = RelationshipArray[i]["attrs"]["Target"].replace("../", "ppt/");
+                        break;
+                    case "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide":
+                    case "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image":
+                    case "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart":
+                    case "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink":
+                    default:
+                        slideResObj[RelationshipArray[i]["attrs"]["Id"]] = {
+                            "type": RelationshipArray[i]["attrs"]["Type"].replace("http://schemas.openxmlformats.org/officeDocument/2006/relationships/", ""),
+                            "target": RelationshipArray[i]["attrs"]["Target"].replace("../", "ppt/")
+                        };
+                }
+            }
+        } else {
+            layoutFilename = RelationshipArray["attrs"]["Target"].replace("../", "ppt/");
+        }
+
+        return slideResObj;
+    
+    });
+
+    // 对母版样式解释普通页面
+    service('processSlideLayout', (readXmlFile, getTextByPathList, processNodesInSlide, getResObj) => (slideLayoutContent, slideLayoutResFilename, slideSize, zip) => {
+       let nodes =  slideLayoutContent["p:sldLayout"]["p:cSld"]["p:spTree"];
+      
+       let sliderInfo = {
+            style: {
+                width: slideSize.width,
+                height: slideSize.height
+                //@todo
+                // background: bgColor
+            },
+
+            children: []
+        };
+
+       var resObj = getResObj(slideLayoutResFilename, zip);
+
+       console.log('resObj', resObj);
+       
+       var warpObj = {
+            slideResObj: resObj,
+            zip: zip
+       };
+ 
+       for(var nodeKey in nodes){
+            if (nodes[nodeKey].constructor === Array) {
+                for (var i=0; i< nodes[nodeKey].length; i++) {
+                    sliderInfo.children.push(processNodesInSlide(nodeKey, nodes[nodeKey][i], warpObj));
+                }
+            } else {
+                sliderInfo.children.push(processNodesInSlide(nodeKey, nodes[nodeKey], warpObj));
+            }
+       }
+
+       return sliderInfo;
+
+       console.log('slideLayoutInfo:', sliderInfo);
+    });
+
+
+    service('processSingle', (readXmlFile, getTextByPathList, indexNodes, processNodesInSlide, processSlideLayout) => (zip, sldFileName, index, slideSize) => {
             
         // =====< Step 1 >=====
         // Read relationship filename of the slide (Get slideLayoutXX.xml)
@@ -1725,6 +1936,9 @@
         } else {
             masterFilename = RelationshipArray["attrs"]["Target"].replace("../", "ppt/");
         }
+
+        var slideLayoutParsedInfo = processSlideLayout(slideLayoutContent, slideLayoutResFilename, slideSize, zip);
+
         // Open slideMasterXX.xml
         var slideMasterContent = readXmlFile(zip, masterFilename);
         var slideMasterTextStyles = getTextByPathList(slideMasterContent, ["p:sldMaster", "p:txStyles"]);
@@ -1756,7 +1970,8 @@
                 background: bgColor
             },
 
-            children: []
+            children: [],
+            slideLayoutInfo: slideLayoutParsedInfo
         };
 
         
@@ -1886,10 +2101,14 @@
             return str.join('');
         };
 
+         // sliders = [sliders[1]];
         let str = sliders.map(item => {
             
             var html = `<div class='page' style="position: relative;width: ${item.style.width}px;height:${item.style.height}px;background-color: #${item.style.background};">
                 ${genChildren(item)}
+                    <span style="z-index: 1;position: relative;">
+                        ${genChildren(item.slideLayoutInfo)}
+                    </span>
                 </div>
             `;
 
